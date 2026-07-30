@@ -127,7 +127,7 @@ def fetch_papers_for_institution(institution_id, email, max_papers=100):
                 abstract_text = reconstruct_abstract(work.get('abstract_inverted_index'))
 
                 raw_row = {
-                    'Landing Page URL': work.get('primary_location', {}).get('landing_page_url', ''),
+                    'Landing Page URL': work.get('id', ''),
                     'Title': work.get('title', ''),
                     'Abstract': abstract_text,
                     'DOI': work.get('doi', ''),
@@ -353,10 +353,9 @@ if __name__ == "__main__":
         "American International University - Bangladesh": "I103434671",
         "North South University": "I157386601",
         "University of Dhaka": "I205746353",
-        "BRAC University": "I5518804"
-
-
-
+        "BRAC University": "I5518804",
+        "Chittagong Medical College": "I2653708"
+        
     }
 
     YOUR_EMAIL = os.getenv("OPENALEX_EMAIL", "")
