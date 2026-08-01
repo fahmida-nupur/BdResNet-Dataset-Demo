@@ -1,9 +1,7 @@
 import os
 import requests
-# import csv  # CSV export disabled; uncomment to re-enable CSV saving
 import time
 import re
-
 from dotenv import load_dotenv
 load_dotenv()  # loads variables from .env file
 
@@ -13,16 +11,6 @@ try:
 except ImportError:
     HAS_PANDAS = False
 
-# --- Google Drive Integration (disabled) ---
-# Uncomment the block below to enable Drive sync.
-# try:
-#     from googleapiclient.discovery import build
-#     from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-#     from google.oauth2 import service_account
-#     HAS_DRIVE = True
-# except ImportError:
-#     HAS_DRIVE = False
-# --- End Google Drive Integration ---
 HAS_DRIVE = False
 
 
@@ -126,13 +114,85 @@ def fetch_papers_for_institution(institution_id, email, max_papers=100):
 
                 abstract_text = reconstruct_abstract(work.get('abstract_inverted_index'))
 
+                # --- Primary location / source metadata ---
+                primary_loc = work.get('primary_location') or {}
+                source = primary_loc.get('source') or {}
+                venue_name      = source.get('display_name', '')
+                publisher_name  = source.get('host_organization_name', '')
+                source_type     = source.get('type', '')        # e.g. journal, conference, repository
+                issn_l          = source.get('issn_l', '')
+                is_in_doaj      = source.get('is_in_doaj', '')
+
+                # --- Work type ---
+                work_type = work.get('type', '')  # e.g. article, book-chapter, proceedings-article
+
+                # --- Open Access ---
+                oa_info    = work.get('open_access') or {}
+                oa_status  = oa_info.get('oa_status', '')   # gold, green, bronze, closed, hybrid
+
+                # --- Bibliographic details ---
+                biblio     = work.get('biblio') or {}
+                volume     = biblio.get('volume', '')
+                issue      = biblio.get('issue', '')
+                first_page = biblio.get('first_page', '')
+                last_page  = biblio.get('last_page', '')
+
+                # --- Metrics / ranking proxies ---
+                fwci = work.get('fwci', '')
+                cnp  = work.get('citation_normalized_percentile') or {}
+                cnp_value      = cnp.get('value', '')
+                is_top_1_pct   = cnp.get('is_in_top_1_percent', '')
+                is_top_10_pct  = cnp.get('is_in_top_10_percent', '')
+
+                # --- Primary topic hierarchy ---
+                primary_topic = work.get('primary_topic') or {}
+                topic_name    = primary_topic.get('display_name', '')
+                subfield_name = (primary_topic.get('subfield') or {}).get('display_name', '')
+                field_name    = (primary_topic.get('field') or {}).get('display_name', '')
+                domain_name   = (primary_topic.get('domain') or {}).get('display_name', '')
+
+                # --- Keywords (top 10 by score, semicolon-separated) ---
+                kw_list  = work.get('keywords') or []
+                keywords = '; '.join(
+                    kw.get('display_name', '')
+                    for kw in sorted(kw_list, key=lambda k: k.get('score', 0), reverse=True)[:10]
+                    if kw.get('display_name')
+                )
+
                 raw_row = {
-                    'Landing Page URL': work.get('id', ''),
-                    'Title': work.get('title', ''),
-                    'Abstract': abstract_text,
-                    'DOI': work.get('doi', ''),
-                    'Publication Year': work.get('publication_year', ''),
-                    'Citation Count': work.get('cited_by_count', 0),
+                    'Landing Page URL':        work.get('id', ''),
+                    'Title':                   work.get('title', ''),
+                    'Abstract':                abstract_text,
+                    'DOI':                     work.get('doi', ''),
+                    'Publication Year':        work.get('publication_year', ''),
+                    'Publication Date':        work.get('publication_date', ''),
+                    'Citation Count':          work.get('cited_by_count', 0),
+                    # Venue / publisher
+                    'Venue / Journal Name':    venue_name,
+                    'ISSN':                    issn_l,
+                    'Publisher':               publisher_name,
+                    'Source Type':             source_type,   # journal | conference | repository | book | …
+                    'Work Type':               work_type,     # article | book-chapter | proceedings-article | …
+                    'In DOAJ':                 is_in_doaj,
+                    # Open access
+                    'OA Status':               oa_status,     # gold | green | bronze | hybrid | closed
+                    # Bibliographic
+                    'Volume':                  volume,
+                    'Issue':                   issue,
+                    'First Page':              first_page,
+                    'Last Page':               last_page,
+                    # Metrics / ranking proxies
+                    'FWCI':                    fwci,
+                    'Citation Percentile':     cnp_value,
+                    'Top 1% Cited':            is_top_1_pct,
+                    'Top 10% Cited':           is_top_10_pct,
+                    # Topic hierarchy
+                    'Primary Topic':           topic_name,
+                    'Subfield':                subfield_name,
+                    'Field':                   field_name,
+                    'Domain':                  domain_name,
+                    # Keywords
+                    'Keywords':                keywords,
                 }
 
                 # Clean string fields; keep numeric fields as-is
@@ -213,24 +273,7 @@ def process_institutions(institutions, email, excel_output="all_institutions_dat
             print(f"No papers found for '{inst_name}'. Skipping...")
             continue
 
-        # --- For CSV Export  ---
-        # Uncomment the block below to re-enable saving each institution as a separate CSV file.
-        # clean_file_name = re.sub(r'[\\/*?:\[\]\s]', '_', inst_name)
-        # csv_filename = f"{clean_file_name}_papers.csv"
-        # fieldnames = papers[0].keys()
-        # try:
-        #     with open(csv_filename, mode='w', newline='', encoding='utf-8-sig') as f:
-        #         writer = csv.DictWriter(f, fieldnames=fieldnames)
-        #         writer.writeheader()
-        #         writer.writerows(papers)
-        #     print(f"  --> Saved CSV: '{csv_filename}' ({len(papers)} rows)")
-        # except PermissionError:
-        #     print(f"  [!] Could not save '{csv_filename}' (file open in another program).")
 
-
-
-
-        # --- Expand _authors into individual columns at the far right ---
         max_authors = max((len(p.get('_authors', [])) for p in papers), default=0)
 
         rows = []
@@ -255,98 +298,6 @@ def process_institutions(institutions, email, excel_output="all_institutions_dat
             print(f"\n[!] Failed to save Excel workbook: {e}")
 
 
-# --- Google Drive Functions (disabled) ---
-# Uncomment the blocks below to enable Drive sync.
-#
-# SCOPES = ['https://www.googleapis.com/auth/drive']
-#
-#
-# def get_drive_service():
-#     """
-#     Build and return an authenticated Google Drive service client
-#     using the Service Account JSON key defined in the .env file.
-#     Returns None if credentials are not configured or unavailable.
-#     """
-#     if not HAS_DRIVE:
-#         print("[!] Google API libraries not installed. Run: pip install -r requirements.txt")
-#         return None
-#
-#     json_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-#     if not json_path or not os.path.exists(json_path):
-#         print("[!] GOOGLE_SERVICE_ACCOUNT_JSON not set or file not found. Skipping Drive sync.")
-#         return None
-#
-#     try:
-#         creds = service_account.Credentials.from_service_account_file(json_path, scopes=SCOPES)
-#         return build('drive', 'v3', credentials=creds)
-#     except Exception as e:
-#         print(f"[!] Failed to authenticate with Google Drive: {e}")
-#         return None
-#
-#
-# def download_from_drive(service, folder_id, filename, dest_path):
-#     """
-#     Download the latest version of `filename` from a Drive folder to `dest_path`.
-#     Returns the file ID if found, else None.
-#     """
-#     try:
-#         query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
-#         results = service.files().list(q=query, fields="files(id, name)").execute()
-#         files = results.get('files', [])
-#
-#         if not files:
-#             print(f"[i] No existing '{filename}' found in Drive. Starting fresh.")
-#             return None
-#
-#         file_id = files[0]['id']
-#         print(f"[i] Downloading latest '{filename}' from Google Drive...")
-#         import io
-#         request = service.files().get_media(fileId=file_id)
-#         fh = io.FileIO(dest_path, 'wb')
-#         downloader = MediaIoBaseDownload(fh, request)
-#         done = False
-#         while not done:
-#             _, done = downloader.next_chunk()
-#         fh.close()
-#         print(f"[+] Download complete: '{dest_path}'")
-#         return file_id
-#
-#     except Exception as e:
-#         print(f"[!] Drive download failed: {e}")
-#         return None
-#
-#
-# def upload_to_drive(service, folder_id, file_path, existing_file_id=None):
-#     """
-#     Upload `file_path` to a Drive folder.
-#     If `existing_file_id` is given, the existing file is replaced (updated in-place).
-#     """
-#     filename = os.path.basename(file_path)
-#     mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-#     media = MediaFileUpload(file_path, mimetype=mime, resumable=True)
-#
-#     try:
-#         if existing_file_id:
-#             # Update the existing file (keeps same file ID and sharing settings)
-#             service.files().update(
-#                 fileId=existing_file_id,
-#                 media_body=media
-#             ).execute()
-#             print(f"[+] Updated '{filename}' on Google Drive.")
-#         else:
-#             # Upload as a new file
-#             metadata = {'name': filename, 'parents': [folder_id]}
-#             service.files().create(
-#                 body=metadata,
-#                 media_body=media,
-#                 fields='id'
-#             ).execute()
-#             print(f"[+] Uploaded '{filename}' to Google Drive.")
-#     except Exception as e:
-#         print(f"[!] Drive upload failed: {e}")
-# --- End Google Drive Functions ---
-
-
 if __name__ == "__main__":
     INSTITUTIONS = {
         "Green University of Bangladesh": "I2802576217",
@@ -354,8 +305,10 @@ if __name__ == "__main__":
         "North South University": "I157386601",
         "University of Dhaka": "I205746353",
         "BRAC University": "I5518804",
-        "Chittagong Medical College": "I2653708"
-        
+        "Chittagong Medical College": "I2653708",
+        "Khulna University of Engineering and Technology": "I1307585291",
+        "Shahjalal University of Science and Technology": "I133190216",
+        "Chandpur Science and Technology University": "I4402554010"
     }
 
     YOUR_EMAIL = os.getenv("OPENALEX_EMAIL", "")
@@ -364,34 +317,9 @@ if __name__ == "__main__":
 
     EXCEL_OUTPUT = "all_institutions_data.xlsx"
 
-
-    # --- Google Drive Settings (disabled) ---  
-    # FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")  # Drive disabled
-
-    # --- Drive Step 1: Download latest Excel from Drive (disabled) ---
-    # drive_service = get_drive_service()
-    # existing_file_id = None
-    # if drive_service and FOLDER_ID:
-    #     existing_file_id = download_from_drive(
-    #         drive_service, FOLDER_ID, EXCEL_OUTPUT, EXCEL_OUTPUT
-    #     )
-    # else:
-    #     if not FOLDER_ID:
-    #         print("[i] GOOGLE_DRIVE_FOLDER_ID not set. Running in local-only mode.")
-    # --- End Drive Step 1 ---
-
-    # ── Step 2: Fetch new institutions and update Excel ────────────────────────
-    # 100 papers per institution limit (set max_papers_per_inst=None to fetch all papers)
-
-
     process_institutions(
         institutions=INSTITUTIONS,
         email=YOUR_EMAIL,
         excel_output=EXCEL_OUTPUT,
         max_papers_per_inst=100
     )
-
-    # --- Drive Step 3: Upload updated Excel back to Drive (disabled) ---
-    # if drive_service and FOLDER_ID and os.path.exists(EXCEL_OUTPUT):
-    #     upload_to_drive(drive_service, FOLDER_ID, EXCEL_OUTPUT, existing_file_id)
-    # --- End Drive Step 3 ---
