@@ -60,42 +60,6 @@ python script.py
 
 ---
 
-## ☁️ Google Drive Setup (One-time)
-
-> This only needs to be done **once** by the project owner. The `service_account.json` file is then shared with all team members.
-
-### Step 1 — Create a Google Cloud Project
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create a new project (e.g., `BdResNet`)
-3. Go to **APIs & Services → Library**
-4. Search for **Google Drive API** and click **Enable**
-
-### Step 2 — Create a Service Account
-1. Go to **APIs & Services → Credentials**
-2. Click **Create Credentials → Service Account**
-3. Give it a name (e.g., `bdresnet-bot`) and click **Done**
-4. Click on the service account → **Keys** tab → **Add Key → JSON**
-5. A `service_account.json` file will download — **keep this safe!**
-
-### Step 3 — Share the Drive Folder
-1. Create a folder in Google Drive (e.g., `BdResNet-Dataset`)
-2. Click **Share** on the folder
-3. Add the service account email (found inside `service_account.json` as `client_email`) with **Editor** access
-4. Copy the Folder ID from the URL:
-   ```
-   https://drive.google.com/drive/folders/<THIS_IS_YOUR_FOLDER_ID>
-   ```
-
-### Step 4 — Configure `.env`
-```env
-GOOGLE_SERVICE_ACCOUNT_JSON=service_account.json
-GOOGLE_DRIVE_FOLDER_ID=1A2B3C4D5E6F...
-```
-
-> **Share `service_account.json` with your team** via a secure channel (e.g., WhatsApp, email). Never commit it to Git.
-
----
-
 ## ⚙️ Configuration
 
 You can add or remove institutions in `script.py`:
